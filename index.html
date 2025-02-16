@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Real-Time Interview Prep Tool</title>
   <style>
-    /* Base style: green and black */
+    /* Deloitte-inspired colours: green and black */
     body {
       background: #ffffff;
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -110,6 +110,13 @@
       color: #000;
       white-space: pre-wrap;
     }
+    /* Timer display */
+    #timerDisplay {
+      margin-top: 10px;
+      font-size: 1.1rem;
+      font-weight: bold;
+      color: #007a33;
+    }
     @media (max-width: 600px) {
       .upload-section {
         flex-direction: column;
@@ -137,7 +144,6 @@
     <div style="text-align: center;">
       <button id="startInterviewBtn" class="btn">Start Interview</button>
       <button id="stopInterviewBtn" class="btn" disabled>Stop Interview</button>
-      <!-- New Finish Interview Button -->
       <button id="finishInterviewBtn" class="btn" disabled>Finish Interview</button>
     </div>
     
@@ -149,9 +155,9 @@
     <!-- Recording Controls -->
     <div class="record-section">
       <button id="recordAnswerBtn" class="btn" disabled>Record Answer</button>
-      <!-- Submit Answer Button -->
       <button id="submitAnswerBtn" class="btn" disabled>Submit Answer</button>
       <div class="transcript-display" id="transcriptDisplay">Your Answer: (none)</div>
+      <div id="timerDisplay">Time left: 0s</div>
     </div>
     
     <!-- Final Analysis Display -->
@@ -166,9 +172,18 @@
     let resumeContent = "";
     let jobDescContent = "";
     let currentQuestion = "";
-    let conversationHistory = "";  // to store all messages
+    let conversationHistory = "";  // to store conversation history
     let recognizing = false;
     let transcriptText = "";
+    let timerInterval; // for the countdown
+    let currentTimerDuration = 0;
+
+    // Calculate timer duration based on the question asked.
+    // For example: 10 seconds base plus 2 seconds per word, with a minimum of 30 seconds.
+    function getTimerDuration(question) {
+      const words = question.trim().split(/\s+/).length;
+      return Math.max(30, 10 + words * 2);
+    }
     
     // Speech Synthesis helper
     function speakText(text, callback) {
@@ -177,7 +192,7 @@
       window.speechSynthesis.speak(utterance);
     }
     
-    // Append a message to the conversation area and save it to history
+    // Append message and update conversation history
     function appendMessage(role, text) {
       const conversation = document.getElementById("conversation");
       const div = document.createElement("div");
@@ -188,7 +203,6 @@
       div.textContent = label + text;
       conversation.appendChild(div);
       conversation.scrollTop = conversation.scrollHeight;
-      // Save plain text to conversationHistory for final analysis
       conversationHistory += label + text + "\n";
     }
     
@@ -202,28 +216,33 @@
       });
     }
     
-    // Setup Speech Recognition API
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      alert("Speech Recognition API not supported in this browser.");
+    // Timer functions
+    function startTimer(duration) {
+      clearInterval(timerInterval);
+      currentTimerDuration = duration;
+      const timerDisplay = document.getElementById("timerDisplay");
+      timerDisplay.textContent = "Time left: " + currentTimerDuration + "s";
+      timerInterval = setInterval(() => {
+        currentTimerDuration--;
+        timerDisplay.textContent = "Time left: " + currentTimerDuration + "s";
+        if (currentTimerDuration <= 0) {
+          clearInterval(timerInterval);
+          // Auto-submit if an answer exists, else alert the candidate
+          if (transcriptText.trim() !== "") {
+            submitAnswer();
+          } else {
+            alert("Time is up! Please record your answer.");
+            recordBtn.disabled = false;
+            submitBtn.disabled = false;
+          }
+        }
+      }, 1000);
     }
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'en-US';
-    recognition.interimResults = false;
     
-    recognition.onresult = (event) => {
-      transcriptText = Array.from(event.results)
-        .map(result => result[0])
-        .map(result => result.transcript)
-        .join('');
-      document.getElementById("transcriptDisplay").textContent = "Your Answer: " + transcriptText;
-    };
-    
-    recognition.onend = () => {
-      recognizing = false;
-      document.getElementById("recordAnswerBtn").disabled = false;
-      document.getElementById("submitAnswerBtn").disabled = false;
-    };
+    function clearTimer() {
+      clearInterval(timerInterval);
+      document.getElementById("timerDisplay").textContent = "";
+    }
     
     // Button elements
     const startBtn = document.getElementById("startInterviewBtn");
@@ -232,50 +251,10 @@
     const recordBtn = document.getElementById("recordAnswerBtn");
     const submitBtn = document.getElementById("submitAnswerBtn");
     
-    startBtn.addEventListener("click", async () => {
-      const resumeFile = document.getElementById("resume").files[0];
-      const jobDescFile = document.getElementById("jobDesc").files[0];
-      if (!resumeFile || !jobDescFile) {
-        alert("Please upload both your resume and job description.");
-        return;
-      }
-      resumeContent = await readFileContent(resumeFile);
-      jobDescContent = await readFileContent(jobDescFile);
-      
-      document.getElementById("resume").disabled = true;
-      document.getElementById("jobDesc").disabled = true;
-      startBtn.disabled = true;
-      stopBtn.disabled = false;
-      recordBtn.disabled = false;
-      finishBtn.disabled = false; // Allow finishing the interview
-      
-      // Start with a default question
-      currentQuestion = "Tell me about yourself.";
-      appendMessage("agent", currentQuestion);
-      speakText(currentQuestion);
-    });
-    
-    stopBtn.addEventListener("click", () => {
-      // Optionally, you might disable further recording here.
-      recordBtn.disabled = true;
-      submitBtn.disabled = true;
-      stopBtn.disabled = true;
-      // Notify the candidate that they can now click Finish Interview.
-      alert("Interview has been stopped. Click 'Finish Interview' to get your overall analysis.");
-    });
-    
-    recordBtn.addEventListener("click", () => {
-      if (recognizing) return;
-      transcriptText = "";
-      document.getElementById("transcriptDisplay").textContent = "Your Answer: (recording...)";
-      submitBtn.disabled = true;
-      recordBtn.disabled = true;
-      recognizing = true;
-      recognition.start();
-    });
-    
-    submitBtn.addEventListener("click", async () => {
-      if (!transcriptText) {
+    // Submit answer function
+    async function submitAnswer() {
+      clearTimer();
+      if (!transcriptText.trim()) {
         alert("Please record your answer first.");
         return;
       }
@@ -301,8 +280,10 @@
             speakText(currentQuestion, () => {
               document.getElementById("transcriptDisplay").textContent = "Your Answer: (none)";
               transcriptText = "";
+              // Restart timer based on the new question
               recordBtn.disabled = false;
               submitBtn.disabled = true;
+              startTimer(getTimerDuration(currentQuestion));
             });
           });
         } else {
@@ -312,17 +293,82 @@
         console.error("API Error:", error);
         alert("There was an error processing your answer.");
       }
+    }
+    
+    // Speech Recognition setup
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Speech Recognition API not supported in this browser.");
+    }
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'en-US';
+    recognition.interimResults = false;
+    recognition.onresult = (event) => {
+      transcriptText = Array.from(event.results)
+        .map(result => result[0])
+        .map(result => result.transcript)
+        .join('');
+      document.getElementById("transcriptDisplay").textContent = "Your Answer: " + transcriptText;
+    };
+    recognition.onend = () => {
+      recognizing = false;
+      recordBtn.disabled = false;
+      submitBtn.disabled = false;
+    };
+    
+    // Button events
+    startBtn.addEventListener("click", async () => {
+      const resumeFile = document.getElementById("resume").files[0];
+      const jobDescFile = document.getElementById("jobDesc").files[0];
+      if (!resumeFile || !jobDescFile) {
+        alert("Please upload both your resume and job description.");
+        return;
+      }
+      resumeContent = await readFileContent(resumeFile);
+      jobDescContent = await readFileContent(jobDescFile);
+      document.getElementById("resume").disabled = true;
+      document.getElementById("jobDesc").disabled = true;
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+      recordBtn.disabled = false;
+      finishBtn.disabled = false;
+      
+      // Start with a default question and set timer based on it
+      currentQuestion = "Tell me about yourself.";
+      appendMessage("agent", currentQuestion);
+      speakText(currentQuestion, () => {
+        startTimer(getTimerDuration(currentQuestion));
+      });
     });
     
-    // New: Finish Interview button triggers final overall analysis
+    stopBtn.addEventListener("click", () => {
+      recordBtn.disabled = true;
+      submitBtn.disabled = true;
+      stopBtn.disabled = true;
+      clearTimer();
+      alert("Interview has been stopped. Click 'Finish Interview' to get your overall analysis.");
+    });
+    
+    recordBtn.addEventListener("click", () => {
+      if (recognizing) return;
+      transcriptText = "";
+      document.getElementById("transcriptDisplay").textContent = "Your Answer: (recording...)";
+      submitBtn.disabled = true;
+      recordBtn.disabled = true;
+      recognizing = true;
+      recognition.start();
+    });
+    
+    submitBtn.addEventListener("click", async () => {
+      await submitAnswer();
+    });
+    
     finishBtn.addEventListener("click", async () => {
-      // Disable further actions
       recordBtn.disabled = true;
       submitBtn.disabled = true;
       stopBtn.disabled = true;
       finishBtn.disabled = true;
-      
-      // Prepare payload with conversation history, resume, and job description
+      clearTimer();
       const payload = {
         resume: resumeContent,
         job_desc: jobDescContent,
