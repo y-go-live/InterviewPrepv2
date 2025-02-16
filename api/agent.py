@@ -1,6 +1,11 @@
 import os
 import json
 import openai
+import logging
+import re
+
+# Set up logging for easier debugging.
+logging.basicConfig(level=logging.INFO)
 
 def handler(request):
     try:
@@ -9,16 +14,19 @@ def handler(request):
         job_desc = data.get("job_desc", "")
         current_question = data.get("current_question", "")
         candidate_answer = data.get("candidate_answer", "")
-        
+
+        # Check for required fields.
         if not resume or not job_desc or not current_question or not candidate_answer:
+            error_msg = "Missing required fields: resume, job_desc, current_question, or candidate_answer."
+            logging.error(error_msg)
             return {
                 "statusCode": 400,
-                "body": json.dumps({"error": "Missing required fields: resume, job_desc, current_question, or candidate_answer."})
+                "body": json.dumps({"error": error_msg})
             }
-        
-        # Build prompt for analysis and next question generation
+
+        # Build the prompt for OpenAI without immediate feedback.
         prompt = f"""
-You are an expert interview coach. Use the following context to analyze the candidate’s answer and generate the next interview question.
+You are an expert interview coach. Based on the following context, generate the next interview question for the candidate without providing immediate feedback on their previous answer.
 
 Candidate's Resume:
 {resume}
@@ -33,11 +41,12 @@ Candidate's Answer:
 {candidate_answer}
 
 Instructions:
-1. Provide a detailed analysis of the candidate's answer including strengths, weaknesses, and suggestions for improvement.
-2. Generate a follow-up interview question.
-3. Return your response as a valid JSON object with two keys: "feedback" and "next_question" (no additional text).
+Generate a follow-up interview question.
+Return your response as a valid JSON object with one key: "next_question" (no additional text).
 """
         openai.api_key = os.getenv("OPENAI_API_KEY")
+        logging.info("Sending prompt to OpenAI...")
+        
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
@@ -47,17 +56,22 @@ Instructions:
         )
         
         ai_output = response["choices"][0]["message"]["content"]
+        logging.info("Received response from OpenAI: " + ai_output)
         
-        # Attempt to parse AI output as JSON
+        # Try to parse the output as JSON.
         try:
             result_json = json.loads(ai_output)
         except json.JSONDecodeError:
-            import re
+            # Attempt to extract the JSON part if extra text is present.
             match = re.search(r"\{.*\}", ai_output, re.DOTALL)
             if match:
                 result_json = json.loads(match.group(0))
             else:
                 raise ValueError("Invalid JSON format in AI output.")
+
+        # Ensure the "next_question" key is present.
+        if "next_question" not in result_json:
+            result_json["next_question"] = "Can you describe a challenging project you led?"
         
         return {
             "statusCode": 200,
@@ -65,6 +79,7 @@ Instructions:
             "body": json.dumps(result_json)
         }
     except Exception as e:
+        logging.exception("Error processing request")
         return {
             "statusCode": 500,
             "body": json.dumps({"error": str(e)})
