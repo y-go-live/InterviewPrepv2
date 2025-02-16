@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Real-Time Interview Prep Tool</title>
   <style>
-    /* Base styles */
+    /* Base style: green and black */
     body {
       background: #ffffff;
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -19,15 +19,14 @@
       background: #ffffff;
       padding: 30px;
       border-radius: 10px;
-      border: 2px solid #007a33; /* Deloitte green border */
+      border: 2px solid #007a33;
       box-shadow: 0 4px 10px rgba(0,0,0,0.1);
     }
     h1 {
       text-align: center;
-      color: #007a33; /* Deloitte green */
+      color: #007a33;
       margin-bottom: 20px;
     }
-    /* Upload section */
     .upload-section {
       display: flex;
       flex-wrap: wrap;
@@ -51,7 +50,6 @@
       border: 1px solid #007a33;
       border-radius: 5px;
     }
-    /* Buttons */
     .btn {
       background-color: #007a33;
       color: #ffffff;
@@ -70,7 +68,6 @@
       background-color: #999;
       cursor: not-allowed;
     }
-    /* Conversation box */
     .conversation-box {
       margin-top: 20px;
       padding: 15px;
@@ -99,7 +96,6 @@
       color: #000;
       font-style: italic;
     }
-    /* Record section */
     .record-section {
       margin-top: 20px;
       text-align: center;
@@ -111,8 +107,8 @@
       border: 1px dashed #007a33;
       border-radius: 5px;
       min-height: 50px;
-      cursor: pointer;
       color: #000;
+      white-space: pre-wrap;
     }
     @media (max-width: 600px) {
       .upload-section {
@@ -141,6 +137,8 @@
     <div style="text-align: center;">
       <button id="startInterviewBtn" class="btn">Start Interview</button>
       <button id="stopInterviewBtn" class="btn" disabled>Stop Interview</button>
+      <!-- New Finish Interview Button -->
+      <button id="finishInterviewBtn" class="btn" disabled>Finish Interview</button>
     </div>
     
     <!-- Conversation Display -->
@@ -151,7 +149,15 @@
     <!-- Recording Controls -->
     <div class="record-section">
       <button id="recordAnswerBtn" class="btn" disabled>Record Answer</button>
+      <!-- Submit Answer Button -->
+      <button id="submitAnswerBtn" class="btn" disabled>Submit Answer</button>
       <div class="transcript-display" id="transcriptDisplay">Your Answer: (none)</div>
+    </div>
+    
+    <!-- Final Analysis Display -->
+    <div class="conversation-box" id="finalAnalysis" style="display: none;">
+      <h2>Final Analysis:</h2>
+      <div id="analysisText"></div>
     </div>
   </div>
 
@@ -160,30 +166,30 @@
     let resumeContent = "";
     let jobDescContent = "";
     let currentQuestion = "";
+    let conversationHistory = "";  // to store all messages
     let recognizing = false;
     let transcriptText = "";
     
-    // Speech Synthesis helper function
+    // Speech Synthesis helper
     function speakText(text, callback) {
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.onend = () => {
-        if (callback) callback();
-      };
+      utterance.onend = () => { if (callback) callback(); };
       window.speechSynthesis.speak(utterance);
     }
     
-    // Append a message to the conversation area
+    // Append a message to the conversation area and save it to history
     function appendMessage(role, text) {
       const conversation = document.getElementById("conversation");
       const div = document.createElement("div");
       div.className = "message " + role;
-      let label = "";
-      if(role === "agent") label = "Agent: ";
-      else if(role === "candidate") label = "You: ";
-      else if(role === "feedback") label = "Feedback: ";
+      let label = (role === "agent") ? "Agent: " :
+                  (role === "candidate") ? "You: " :
+                  (role === "feedback") ? "Feedback: " : "";
       div.textContent = label + text;
       conversation.appendChild(div);
       conversation.scrollTop = conversation.scrollHeight;
+      // Save plain text to conversationHistory for final analysis
+      conversationHistory += label + text + "\n";
     }
     
     // File reader helper
@@ -216,15 +222,17 @@
     recognition.onend = () => {
       recognizing = false;
       document.getElementById("recordAnswerBtn").disabled = false;
+      document.getElementById("submitAnswerBtn").disabled = false;
     };
     
-    // Interview control buttons
+    // Button elements
     const startBtn = document.getElementById("startInterviewBtn");
     const stopBtn = document.getElementById("stopInterviewBtn");
+    const finishBtn = document.getElementById("finishInterviewBtn");
     const recordBtn = document.getElementById("recordAnswerBtn");
+    const submitBtn = document.getElementById("submitAnswerBtn");
     
     startBtn.addEventListener("click", async () => {
-      // Validate file uploads
       const resumeFile = document.getElementById("resume").files[0];
       const jobDescFile = document.getElementById("jobDesc").files[0];
       if (!resumeFile || !jobDescFile) {
@@ -234,52 +242,50 @@
       resumeContent = await readFileContent(resumeFile);
       jobDescContent = await readFileContent(jobDescFile);
       
-      // Disable file inputs and start button
       document.getElementById("resume").disabled = true;
       document.getElementById("jobDesc").disabled = true;
       startBtn.disabled = true;
       stopBtn.disabled = false;
       recordBtn.disabled = false;
+      finishBtn.disabled = false; // Allow finishing the interview
       
-      // Start interview with a default question
+      // Start with a default question
       currentQuestion = "Tell me about yourself.";
       appendMessage("agent", currentQuestion);
       speakText(currentQuestion);
     });
     
     stopBtn.addEventListener("click", () => {
-      // Reset interview state (for demo purposes, reload the page)
-      location.reload();
+      // Optionally, you might disable further recording here.
+      recordBtn.disabled = true;
+      submitBtn.disabled = true;
+      stopBtn.disabled = true;
+      // Notify the candidate that they can now click Finish Interview.
+      alert("Interview has been stopped. Click 'Finish Interview' to get your overall analysis.");
     });
     
     recordBtn.addEventListener("click", () => {
       if (recognizing) return;
       transcriptText = "";
       document.getElementById("transcriptDisplay").textContent = "Your Answer: (recording...)";
+      submitBtn.disabled = true;
       recordBtn.disabled = true;
       recognizing = true;
       recognition.start();
     });
     
-    // After recording, clicking the transcript display sends the answer for analysis
-    document.getElementById("transcriptDisplay").addEventListener("click", async () => {
+    submitBtn.addEventListener("click", async () => {
       if (!transcriptText) {
         alert("Please record your answer first.");
         return;
       }
-      
-      // Append candidate's answer to conversation
       appendMessage("candidate", transcriptText);
-      
-      // Prepare payload for API call
       const payload = {
         resume: resumeContent,
         job_desc: jobDescContent,
         current_question: currentQuestion,
         candidate_answer: transcriptText
       };
-      
-      // Call backend API endpoint for feedback and next question
       try {
         const response = await fetch('/api/agent', {
           method: 'POST',
@@ -287,20 +293,16 @@
           body: JSON.stringify(payload)
         });
         const result = await response.json();
-        
-        // Append feedback and next question to conversation
         if(result.feedback && result.next_question) {
           appendMessage("feedback", result.feedback);
           currentQuestion = result.next_question;
           appendMessage("agent", currentQuestion);
-          
-          // Speak out feedback and next question in sequence
           speakText(result.feedback, () => {
             speakText(currentQuestion, () => {
-              // Reset transcript display for the next answer
               document.getElementById("transcriptDisplay").textContent = "Your Answer: (none)";
               transcriptText = "";
               recordBtn.disabled = false;
+              submitBtn.disabled = true;
             });
           });
         } else {
@@ -309,6 +311,41 @@
       } catch (error) {
         console.error("API Error:", error);
         alert("There was an error processing your answer.");
+      }
+    });
+    
+    // New: Finish Interview button triggers final overall analysis
+    finishBtn.addEventListener("click", async () => {
+      // Disable further actions
+      recordBtn.disabled = true;
+      submitBtn.disabled = true;
+      stopBtn.disabled = true;
+      finishBtn.disabled = true;
+      
+      // Prepare payload with conversation history, resume, and job description
+      const payload = {
+        resume: resumeContent,
+        job_desc: jobDescContent,
+        conversation: conversationHistory
+      };
+      try {
+        const response = await fetch('/api/final_analysis', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+        if(result.final_analysis) {
+          const analysisDiv = document.getElementById("finalAnalysis");
+          document.getElementById("analysisText").textContent = result.final_analysis;
+          analysisDiv.style.display = "block";
+          speakText("Here is your overall interview analysis. Please review the analysis on screen.");
+        } else {
+          alert("Unexpected response from final analysis API.");
+        }
+      } catch (error) {
+        console.error("Final Analysis API Error:", error);
+        alert("There was an error getting your final analysis.");
       }
     });
   </script>
