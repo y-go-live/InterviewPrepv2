@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Real-Time Interview Prep Tool</title>
   <style>
-    /* Deloitte-inspired colours: green and black */
+    /* green and black */
     body {
       background: #ffffff;
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -92,10 +92,6 @@
     .message.candidate {
       color: #000;
     }
-    .message.feedback {
-      color: #000;
-      font-style: italic;
-    }
     .record-section {
       margin-top: 20px;
       text-align: center;
@@ -172,34 +168,33 @@
     let resumeContent = "";
     let jobDescContent = "";
     let currentQuestion = "";
-    let conversationHistory = "";  // to store conversation history
+    let conversationHistory = "";  // store conversation history
     let recognizing = false;
     let transcriptText = "";
-    let timerInterval; // for the countdown
+    let timerInterval; // for countdown timer
     let currentTimerDuration = 0;
 
-    // Calculate timer duration based on the question asked.
-    // For example: 10 seconds base plus 2 seconds per word, with a minimum of 30 seconds.
+    // Calculate timer duration based on question length.
+    // For example: base 10s + 2s per word, minimum 30 seconds.
     function getTimerDuration(question) {
       const words = question.trim().split(/\s+/).length;
       return Math.max(30, 10 + words * 2);
     }
     
-    // Speech Synthesis helper
+    // Speech Synthesis helper function
     function speakText(text, callback) {
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.onend = () => { if (callback) callback(); };
       window.speechSynthesis.speak(utterance);
     }
     
-    // Append message and update conversation history
+    // Append a message and update conversation history
     function appendMessage(role, text) {
       const conversation = document.getElementById("conversation");
       const div = document.createElement("div");
       div.className = "message " + role;
       let label = (role === "agent") ? "Agent: " :
-                  (role === "candidate") ? "You: " :
-                  (role === "feedback") ? "Feedback: " : "";
+                  (role === "candidate") ? "You: " : "";
       div.textContent = label + text;
       conversation.appendChild(div);
       conversation.scrollTop = conversation.scrollHeight;
@@ -227,7 +222,7 @@
         timerDisplay.textContent = "Time left: " + currentTimerDuration + "s";
         if (currentTimerDuration <= 0) {
           clearInterval(timerInterval);
-          // Auto-submit if an answer exists, else alert the candidate
+          // Auto-submit if answer exists; otherwise, alert the candidate.
           if (transcriptText.trim() !== "") {
             submitAnswer();
           } else {
@@ -272,22 +267,21 @@
           body: JSON.stringify(payload)
         });
         const result = await response.json();
-        if(result.feedback && result.next_question) {
-          appendMessage("feedback", result.feedback);
+        console.log("API result:", result);
+        // Check for the next_question key.
+        if (result.next_question) {
           currentQuestion = result.next_question;
           appendMessage("agent", currentQuestion);
-          speakText(result.feedback, () => {
-            speakText(currentQuestion, () => {
-              document.getElementById("transcriptDisplay").textContent = "Your Answer: (none)";
-              transcriptText = "";
-              // Restart timer based on the new question
-              recordBtn.disabled = false;
-              submitBtn.disabled = true;
-              startTimer(getTimerDuration(currentQuestion));
-            });
+          // Speak the next question and restart the timer.
+          speakText(currentQuestion, () => {
+            document.getElementById("transcriptDisplay").textContent = "Your Answer: (none)";
+            transcriptText = "";
+            recordBtn.disabled = false;
+            submitBtn.disabled = true;
+            startTimer(getTimerDuration(currentQuestion));
           });
         } else {
-          alert("Unexpected response from API.");
+          alert("Unexpected response from API. Please check your endpoint.");
         }
       } catch (error) {
         console.error("API Error:", error);
@@ -333,7 +327,7 @@
       recordBtn.disabled = false;
       finishBtn.disabled = false;
       
-      // Start with a default question and set timer based on it
+      // Start with a default question and timer.
       currentQuestion = "Tell me about yourself.";
       appendMessage("agent", currentQuestion);
       speakText(currentQuestion, () => {
