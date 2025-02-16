@@ -1,8 +1,8 @@
 import os
 import json
-import openai
-import re
+import requests
 import logging
+import re
 
 logging.basicConfig(level=logging.INFO)
 
@@ -14,18 +14,17 @@ def handler(request):
         current_question = data.get("current_question", "").strip()
         candidate_answer = data.get("candidate_answer", "").strip()
 
-        # Check if any required field is missing
         if not resume or not job_desc or not current_question or not candidate_answer:
-            error_msg = "Missing required fields: ensure resume, job_desc, current_question, and candidate_answer are provided."
+            error_msg = "Missing required fields: resume, job_desc, current_question, or candidate_answer."
             logging.error(error_msg)
             return {
                 "statusCode": 400,
                 "body": json.dumps({"error": error_msg})
             }
 
-        # Updated prompt with explicit instructions and sample output format.
+        # Build the prompt for generating the next interview question.
         prompt = f"""
-You are an expert interview coach. Your task is to generate the next interview question based on the candidate's background, the job description, the current interview question, and the candidate's answer. Do not provide any feedback on the answer.
+You are an expert interview coach. Based on the candidate's resume, the job description, the current interview question, and the candidate's answer, generate the next interview question. Do not provide any feedback on the answer.
 
 Candidate's Resume:
 {resume}
@@ -40,35 +39,46 @@ Candidate's Answer:
 {candidate_answer}
 
 Instructions:
-Return only a JSON object with a single key "next_question". The value should be a follow-up interview question for the candidate. Do not include any other text.
+Return only a JSON object with a single key "next_question" that contains the follow-up interview question.
 Example output:
 {{"next_question": "What motivates you to excel in your work?"}}
 """
-        openai.api_key = os.getenv("OPENAI_API_KEY")
-        logging.info("Sending prompt to OpenAI...")
-        
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are an expert interview coach."},
-                {"role": "user", "content": prompt}
-            ]
-        )
-        
-        ai_output = response["choices"][0]["message"]["content"]
-        logging.info("Raw OpenAI response: " + ai_output)
-        
+        # Use LLaMA 3.1 8B model via Together AI
+        together_api_key = os.getenv("TOGETHER_API_KEY")
+        if not together_api_key:
+            raise Exception("Missing TOGETHER_API_KEY environment variable.")
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {together_api_key}"
+        }
+        payload = {
+            "model": "llama-3.1-8b",  # using LLaMA 3.1 8B model
+            "prompt": prompt,
+            "max_tokens": 150,
+            "temperature": 0.7,
+            "top_p": 0.9
+        }
+
+        together_endpoint = "https://api.together.xyz/v1/llama"
+        response = requests.post(together_endpoint, headers=headers, json=payload)
+        if response.status_code != 200:
+            raise Exception(f"Together API error: {response.status_code} {response.text}")
+
+        ai_response = response.json()
+        # Assume the generated text is under "text" field.
+        output_text = ai_response.get("text", "")
+        logging.info("Raw Together API response: " + output_text)
+
         try:
-            result_json = json.loads(ai_output)
+            result_json = json.loads(output_text)
         except json.JSONDecodeError:
-            # Attempt to extract JSON using regex if extra text is included
-            match = re.search(r"\{.*\}", ai_output, re.DOTALL)
+            match = re.search(r"\{.*\}", output_text, re.DOTALL)
             if match:
                 result_json = json.loads(match.group(0))
             else:
-                raise ValueError("Unable to parse JSON from OpenAI output.")
+                raise ValueError("Unable to parse JSON from Together API output.")
 
-        # Ensure that a next_question exists and is non-empty
         if "next_question" not in result_json or not result_json["next_question"].strip():
             fallback = "Can you describe a challenging project you led?"
             logging.warning("No next_question returned; using fallback: " + fallback)
