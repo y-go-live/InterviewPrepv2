@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Real-Time Interview Prep Tool</title>
+  <style>
+    /* Base styles */
+    body {
+      background: #ffffff;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 20px;
+      color: #000000;
+    }
+    .container {
+      max-width: 800px;
+      margin: 40px auto;
+      background: #ffffff;
+      padding: 30px;
+      border-radius: 10px;
+      border: 2px solid #007a33; /* Deloitte green border */
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      text-align: center;
+      color: #007a33; /* Deloitte green */
+      margin-bottom: 20px;
+    }
+    /* Upload section */
+    .upload-section {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+    .upload-section div {
+      flex: 1;
+      min-width: 240px;
+    }
+    .upload-section label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+      color: #000;
+    }
+    .upload-section input {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #007a33;
+      border-radius: 5px;
+    }
+    /* Buttons */
+    .btn {
+      background-color: #007a33;
+      color: #ffffff;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: background 0.3s ease;
+      margin: 5px;
+      font-weight: bold;
+    }
+    .btn:hover {
+      background-color: #005622;
+    }
+    .btn:disabled {
+      background-color: #999;
+      cursor: not-allowed;
+    }
+    /* Conversation box */
+    .conversation-box {
+      margin-top: 20px;
+      padding: 15px;
+      border: 1px solid #007a33;
+      border-radius: 5px;
+      background: #f8f8f8;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    .conversation-box h2 {
+      margin-top: 0;
+      color: #007a33;
+    }
+    .message {
+      margin-bottom: 15px;
+      line-height: 1.5;
+    }
+    .message.agent {
+      color: #007a33;
+      font-weight: bold;
+    }
+    .message.candidate {
+      color: #000;
+    }
+    .message.feedback {
+      color: #000;
+      font-style: italic;
+    }
+    /* Record section */
+    .record-section {
+      margin-top: 20px;
+      text-align: center;
+    }
+    .transcript-display {
+      margin-top: 10px;
+      padding: 10px;
+      background: #e6f4ea;
+      border: 1px dashed #007a33;
+      border-radius: 5px;
+      min-height: 50px;
+      cursor: pointer;
+      color: #000;
+    }
+    @media (max-width: 600px) {
+      .upload-section {
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Real-Time Interview Prep Tool</h1>
+    
+    <!-- File Uploads -->
+    <div class="upload-section">
+      <div>
+        <label for="resume">Upload Resume (txt):</label>
+        <input type="file" id="resume" accept=".txt" />
+      </div>
+      <div>
+        <label for="jobDesc">Upload Job Description (txt):</label>
+        <input type="file" id="jobDesc" accept=".txt" />
+      </div>
+    </div>
+    
+    <!-- Interview Controls -->
+    <div style="text-align: center;">
+      <button id="startInterviewBtn" class="btn">Start Interview</button>
+      <button id="stopInterviewBtn" class="btn" disabled>Stop Interview</button>
+    </div>
+    
+    <!-- Conversation Display -->
+    <div class="conversation-box" id="conversation">
+      <h2>Interview Conversation:</h2>
+    </div>
+    
+    <!-- Recording Controls -->
+    <div class="record-section">
+      <button id="recordAnswerBtn" class="btn" disabled>Record Answer</button>
+      <div class="transcript-display" id="transcriptDisplay">Your Answer: (none)</div>
+    </div>
+  </div>
+
+  <script>
+    // Global state variables
+    let resumeContent = "";
+    let jobDescContent = "";
+    let currentQuestion = "";
+    let recognizing = false;
+    let transcriptText = "";
+    
+    // Speech Synthesis helper function
+    function speakText(text, callback) {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.onend = () => {
+        if (callback) callback();
+      };
+      window.speechSynthesis.speak(utterance);
+    }
+    
+    // Append a message to the conversation area
+    function appendMessage(role, text) {
+      const conversation = document.getElementById("conversation");
+      const div = document.createElement("div");
+      div.className = "message " + role;
+      let label = "";
+      if(role === "agent") label = "Agent: ";
+      else if(role === "candidate") label = "You: ";
+      else if(role === "feedback") label = "Feedback: ";
+      div.textContent = label + text;
+      conversation.appendChild(div);
+      conversation.scrollTop = conversation.scrollHeight;
+    }
+    
+    // File reader helper
+    function readFileContent(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (event) => resolve(event.target.result);
+        reader.onerror = (error) => reject(error);
+        reader.readAsText(file);
+      });
+    }
+    
+    // Setup Speech Recognition API
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Speech Recognition API not supported in this browser.");
+    }
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'en-US';
+    recognition.interimResults = false;
+    
+    recognition.onresult = (event) => {
+      transcriptText = Array.from(event.results)
+        .map(result => result[0])
+        .map(result => result.transcript)
+        .join('');
+      document.getElementById("transcriptDisplay").textContent = "Your Answer: " + transcriptText;
+    };
+    
+    recognition.onend = () => {
+      recognizing = false;
+      document.getElementById("recordAnswerBtn").disabled = false;
+    };
+    
+    // Interview control buttons
+    const startBtn = document.getElementById("startInterviewBtn");
+    const stopBtn = document.getElementById("stopInterviewBtn");
+    const recordBtn = document.getElementById("recordAnswerBtn");
+    
+    startBtn.addEventListener("click", async () => {
+      // Validate file uploads
+      const resumeFile = document.getElementById("resume").files[0];
+      const jobDescFile = document.getElementById("jobDesc").files[0];
+      if (!resumeFile || !jobDescFile) {
+        alert("Please upload both your resume and job description.");
+        return;
+      }
+      resumeContent = await readFileContent(resumeFile);
+      jobDescContent = await readFileContent(jobDescFile);
+      
+      // Disable file inputs and start button
+      document.getElementById("resume").disabled = true;
+      document.getElementById("jobDesc").disabled = true;
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+      recordBtn.disabled = false;
+      
+      // Start interview with a default question
+      currentQuestion = "Tell me about yourself.";
+      appendMessage("agent", currentQuestion);
+      speakText(currentQuestion);
+    });
+    
+    stopBtn.addEventListener("click", () => {
+      // Reset interview state (for demo purposes, reload the page)
+      location.reload();
+    });
+    
+    recordBtn.addEventListener("click", () => {
+      if (recognizing) return;
+      transcriptText = "";
+      document.getElementById("transcriptDisplay").textContent = "Your Answer: (recording...)";
+      recordBtn.disabled = true;
+      recognizing = true;
+      recognition.start();
+    });
+    
+    // After recording, clicking the transcript display sends the answer for analysis
+    document.getElementById("transcriptDisplay").addEventListener("click", async () => {
+      if (!transcriptText) {
+        alert("Please record your answer first.");
+        return;
+      }
+      
+      // Append candidate's answer to conversation
+      appendMessage("candidate", transcriptText);
+      
+      // Prepare payload for API call
+      const payload = {
+        resume: resumeContent,
+        job_desc: jobDescContent,
+        current_question: currentQuestion,
+        candidate_answer: transcriptText
+      };
+      
+      // Call backend API endpoint for feedback and next question
+      try {
+        const response = await fetch('/api/agent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+        
+        // Append feedback and next question to conversation
+        if(result.feedback && result.next_question) {
+          appendMessage("feedback", result.feedback);
+          currentQuestion = result.next_question;
+          appendMessage("agent", currentQuestion);
+          
+          // Speak out feedback and next question in sequence
+          speakText(result.feedback, () => {
+            speakText(currentQuestion, () => {
+              // Reset transcript display for the next answer
+              document.getElementById("transcriptDisplay").textContent = "Your Answer: (none)";
+              transcriptText = "";
+              recordBtn.disabled = false;
+            });
+          });
+        } else {
+          alert("Unexpected response from API.");
+        }
+      } catch (error) {
+        console.error("API Error:", error);
+        alert("There was an error processing your answer.");
+      }
+    });
+  </script>
+</body>
+</html>
