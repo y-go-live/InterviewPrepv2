@@ -1,9 +1,6 @@
 import os
 import json
 import openai
-import logging
-
-logging.basicConfig(level=logging.INFO)
 
 def handler(request):
     try:
@@ -13,11 +10,9 @@ def handler(request):
         conversation = data.get("conversation", "")
 
         if not resume or not job_desc or not conversation:
-            error_msg = "Missing required fields: resume, job_desc, or conversation."
-            logging.error(error_msg)
             return {
                 "statusCode": 400,
-                "body": json.dumps({"error": error_msg})
+                "body": json.dumps({"error": "Missing required fields: resume, job_desc, or conversation."})
             }
 
         prompt = f"""
@@ -50,7 +45,6 @@ Provide your analysis as plain text.
             "body": json.dumps({"final_analysis": final_analysis})
         }
     except Exception as e:
-        logging.exception("Error in final analysis handler")
         return {
             "statusCode": 500,
             "body": json.dumps({"error": str(e)})
