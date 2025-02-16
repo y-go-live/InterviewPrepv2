@@ -1,10 +1,7 @@
 import os
 import json
 import openai
-import logging
 import re
-
-logging.basicConfig(level=logging.INFO)
 
 def handler(request):
     try:
@@ -15,11 +12,9 @@ def handler(request):
         candidate_answer = data.get("candidate_answer", "")
 
         if not resume or not job_desc or not current_question or not candidate_answer:
-            error_msg = "Missing required fields: resume, job_desc, current_question, or candidate_answer."
-            logging.error(error_msg)
             return {
                 "statusCode": 400,
-                "body": json.dumps({"error": error_msg})
+                "body": json.dumps({"error": "Missing required fields: resume, job_desc, current_question, or candidate_answer."})
             }
 
         prompt = f"""
@@ -42,8 +37,6 @@ Generate a follow-up interview question.
 Return your response as a valid JSON object with one key: "next_question".
 """
         openai.api_key = os.getenv("OPENAI_API_KEY")
-        logging.info("Sending prompt to OpenAI...")
-        
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
@@ -52,8 +45,7 @@ Return your response as a valid JSON object with one key: "next_question".
             ]
         )
         ai_output = response["choices"][0]["message"]["content"]
-        logging.info("Received response: " + ai_output)
-        
+
         try:
             result_json = json.loads(ai_output)
         except json.JSONDecodeError:
@@ -72,7 +64,6 @@ Return your response as a valid JSON object with one key: "next_question".
             "body": json.dumps(result_json)
         }
     except Exception as e:
-        logging.exception("Error in agent handler")
         return {
             "statusCode": 500,
             "body": json.dumps({"error": str(e)})
