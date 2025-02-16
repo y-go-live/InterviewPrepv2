@@ -1,7 +1,9 @@
 import os
 import json
 import openai
-import re
+import logging
+
+logging.basicConfig(level=logging.INFO)
 
 def handler(request):
     try:
@@ -9,14 +11,15 @@ def handler(request):
         resume = data.get("resume", "")
         job_desc = data.get("job_desc", "")
         conversation = data.get("conversation", "")
-        
+
         if not resume or not job_desc or not conversation:
+            error_msg = "Missing required fields: resume, job_desc, or conversation."
+            logging.error(error_msg)
             return {
                 "statusCode": 400,
-                "body": json.dumps({"error": "Missing required fields: resume, job_desc, or conversation."})
+                "body": json.dumps({"error": error_msg})
             }
-        
-        # Build prompt for overall analysis
+
         prompt = f"""
 You are an expert interview coach. Based on the following interview conversation, the candidate's resume, and the job description, provide a detailed overall analysis of the candidate's interview performance. Include insights on strengths, weaknesses, and actionable suggestions for improvement.
 
@@ -47,6 +50,7 @@ Provide your analysis as plain text.
             "body": json.dumps({"final_analysis": final_analysis})
         }
     except Exception as e:
+        logging.exception("Error in final analysis handler")
         return {
             "statusCode": 500,
             "body": json.dumps({"error": str(e)})
